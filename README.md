@@ -1,3 +1,6 @@
+TagInterval tree for editor in C
+----
+
 Converted by claude, by using code from
 
 https://github.com/robelar555/claudeGeneratedEditorGivenAlgorithmDescription
