@@ -1,0 +1,375 @@
+Algorithm T (Tagged Interval Tree)
+
+Input: Operations on tagged intervals with tags from set α
+Output: A data structure managing tagged intervals with operations for adding, removing and checking tags
+
+We define an interval node ν as a structure containing:
+• interval: [a_ν, b_ν] where a_ν, b_ν are reals and a_ν < b_ν
+• tag: α or null
+• children: sequence of interval nodes {ν_1, ν_2, ..., ν_k}
+
+T1. [Initialize tree] Create a tagged interval tree T with root node ν where:
+   ν.interval ← [a, b]
+   ν.tag ← null
+   ν.children ← {}
+
+T2. [Binary search for insertion point] To find insertion point in a sorted sequence S for value x:
+   a. If S is empty, return 0.
+   b. Set l ← 0, r ← |S| - 1.
+   c. While l ≤ r do:
+      i. Set m ← ⌊(l + r)/2⌋.
+      ii. If S[m].interval[0] = x, return m.
+      iii. If S[m].interval[0] < x, set l ← m + 1.
+      iv. Otherwise, set r ← m - 1.
+   d. Return l.
+
+T3. [Add tag] To add tag α to interval [a, b] in tree T:
+   Execute procedure AddTagDFS(T.root, α, a, b).
+   
+   Procedure AddTagDFS(ν, α, a, b):
+   a. Constrain to node boundaries:
+      a' ← max(a, ν.interval[0])
+      b' ← min(b, ν.interval[1])
+   
+   b. If a' ≥ b', return. /* No overlap */
+   c. If ν.tag = α, return. /* Already has tag */
+   
+   d. If ν.children is empty:
+      i. Create child ← new IntervalNode with:
+         child.interval ← [a', b']
+         child.tag ← α
+         child.children ← {}
+      ii. Append child to ν.children.
+      iii. Return.
+   
+   e. If TryMergeWithNeighbors(ν, a', b', α) succeeds, return.
+   
+   f. Process intervals not covered by children:
+      i. I ← {} /* Insertion points */
+      ii. current ← a'
+      
+      iii. Find first relevant child:
+         i ← FindInsertionPoint(ν.children, current)
+         If i > 0 and ν.children[i-1].interval[1] > current then i ← i - 1
+      
+      iv. Check gap before first child:
+         If i < |ν.children| and current < ν.children[i].interval[0] then:
+            Append {index: i, start: current, end: min(b', ν.children[i].interval[0])} to I
+            current ← min(b', ν.children[i].interval[0])
+      
+      v. Process overlapping children:
+         While i < |ν.children| and current < b' do:
+            child ← ν.children[i]
+            
+            If current < child.interval[1] then:
+               AddTagDFS(child, α, current, b')
+               current ← child.interval[1]
+            
+            If i+1 < |ν.children| then:
+               next ← ν.children[i+1]
+               If current < b' and current < next.interval[0] then:
+                  Append {index: i+1, start: current, end: min(b', next.interval[0])} to I
+                  current ← min(b', next.interval[0])
+            
+            i ← i + 1
+      
+      vi. Handle remaining interval after all children:
+         If current < b' then:
+            Append {index: |ν.children|, start: current, end: b'} to I
+      
+      vii. Insert new nodes (in reverse to preserve indices):
+         For j from |I|-1 down to 0 do:
+            point ← I[j]
+            If not TryMergeWithNeighbors(ν, point.start, point.end, α) then:
+               newNode ← new IntervalNode with interval [point.start, point.end], tag α
+               Insert newNode at position point.index in ν.children
+
+T4. [Try merge with neighbors] Procedure TryMergeWithNeighbors(ν, a, b, α):
+   a. If ν.children is empty, return false.
+   
+   b. Find potential neighbors:
+      i ← FindInsertionPoint(ν.children, a)
+   
+   c. Try left neighbor:
+      If i > 0 then:
+         left ← ν.children[i-1]
+         If left.tag = α and left.interval[1] ≥ a then:
+            /* Merge with left */
+            left.interval[1] ← max(left.interval[1], b)
+            
+            /* Check right neighbor for possible merge */
+            If i < |ν.children| then:
+               right ← ν.children[i]
+               If right.tag = α and left.interval[1] ≥ right.interval[0] then:
+                  /* Merge left and right */
+                  left.interval[1] ← max(left.interval[1], right.interval[1])
+                  Append right.children to left.children
+                  Remove element at position i from ν.children
+            
+            Return true
+   
+   d. Try right neighbor:
+      If i < |ν.children| then:
+         right ← ν.children[i]
+         If right.tag = α and b ≥ right.interval[0] then:
+            right.interval[0] ← min(right.interval[0], a)
+            Return true
+   
+   e. Return false.
+
+T5. [Remove tag] To remove tag α from interval [a, b] in tree T:
+   a. result ← RemoveTagDFS(T.root, α, a, b)
+   b. Return result.removed
+
+   Procedure RemoveTagDFS(ν, α, a, b):
+   a. Adjust interval to node boundaries:
+      a' ← max(a, ν.interval[0])
+      b' ← min(b, ν.interval[1])
+   
+   b. If a' ≥ b' then:
+      Return {removed: false, state: "NO_OVERLAP", 
+              remainingInterval: [a, b], rehookNodeList: {}}
+   
+   c. If ν.tag = α then:
+      a_ν ← ν.interval[0]
+      b_ν ← ν.interval[1]
+      R ← {} /* Rehook nodes */
+      
+      i. Case 1: Remove interval is inside node (a' > a_ν and b' < b_ν):
+         Before ← {} /* Children before removal */
+         Inside ← {} /* Children overlapping removal */
+         After ← {}  /* Children after removal */
+         
+         For each child in ν.children do:
+            If child.interval[1] ≤ a' then:
+               Append child to Before
+            Else if child.interval[0] ≥ b' then:
+               Append child to After
+            Else:
+               /* Child overlaps with removal */
+               childResult ← RemoveTagDFS(child, α, a', b')
+               If childResult.state ∈ {"REMOVE-ENTIRE-NODE", "REMOVE-INTERVAL-INSIDE"} then:
+                  Append childResult.rehookNodeList to R
+               Else:
+                  Append child to Inside
+         
+         /* Create node for interval before removal */
+         If a' > a_ν then:
+            preNode ← new IntervalNode with interval [a_ν, a'], tag α
+            preNode.children ← Before
+            Append preNode to R
+         Else:
+            Append Before to R
+         
+         /* Add overlapping children */
+         Append Inside to R
+         
+         /* Create node for interval after removal */
+         If b' < b_ν then:
+            postNode ← new IntervalNode with interval [b', b_ν], tag α
+            postNode.children ← After
+            Append postNode to R
+         Else:
+            Append After to R
+         
+         Return {removed: true, state: "REMOVE-INTERVAL-INSIDE", 
+                 remainingInterval: [b, b], rehookNodeList: R}
+      
+      ii. Case 2: Removal starts before/at node start, ends within node (a' ≤ a_ν and b' < b_ν):
+         ν.interval[0] ← b'
+         
+         /* Process affected children */
+         toRemove ← {}
+         For i from 0 to |ν.children|-1 do:
+            child ← ν.children[i]
+            If child.interval[1] ≤ b' then:
+               Append i to toRemove
+            Else if child.interval[0] < b' then:
+               childResult ← RemoveTagDFS(child, α, a', b')
+               If childResult.removed and childResult.state = "REMOVE-ENTIRE-NODE" then:
+                  Append i to toRemove
+                  For each rehookNode in childResult.rehookNodeList do:
+                     If rehookNode.interval[0] ≥ b' then:
+                        insertPos ← FindInsertionPoint(ν.children, rehookNode.interval[0])
+                        Insert rehookNode at position insertPos in ν.children
+               End if
+            End if
+         End for
+         
+         /* Remove affected children (in reverse) */
+         For i from |toRemove|-1 down to 0 do:
+            Remove element at position toRemove[i] from ν.children
+         
+         Return {removed: true, state: "REMOVE-INTERVAL-LEFT", 
+                 remainingInterval: [b', b], rehookNodeList: {}}
+      
+      iii. Case 3: Removal starts within node, extends to/beyond node end (a' > a_ν and b' ≥ b_ν):
+         ν.interval[1] ← a'
+         
+         /* Process affected children */
+         toRemove ← {}
+         For i from 0 to |ν.children|-1 do:
+            child ← ν.children[i]
+            If child.interval[0] ≥ a' then:
+               Append i to toRemove
+            Else if child.interval[1] > a' then:
+               childResult ← RemoveTagDFS(child, α, a', child.interval[1])
+               If childResult.removed and childResult.state = "REMOVE-ENTIRE-NODE" then:
+                  Append i to toRemove
+                  For each rehookNode in childResult.rehookNodeList do:
+                     If rehookNode.interval[1] ≤ a' then:
+                        insertPos ← FindInsertionPoint(ν.children, rehookNode.interval[0])
+                        Insert rehookNode at position insertPos in ν.children
+               End if
+            End if
+         End for
+         
+         /* Remove affected children (in reverse) */
+         For i from |toRemove|-1 down to 0 do:
+            Remove element at position toRemove[i] from ν.children
+         
+         Return {removed: true, state: "REMOVE-INTERVAL-RIGHT", 
+                 remainingInterval: [a, a'], rehookNodeList: {}}
+      
+      iv. Case 4: Removal completely covers node (a' ≤ a_ν and b' ≥ b_ν):
+         processed ← {}
+         
+         For each child in ν.children do:
+            If child.interval[0] < b' and child.interval[1] > a' then:
+               childResult ← RemoveTagDFS(child, α, a', b')
+               If childResult.removed then:
+                  Append childResult.rehookNodeList to processed
+               Else:
+                  Append child to processed
+            Else:
+               Append child to processed
+         
+         Return {removed: true, state: "REMOVE-ENTIRE-NODE", 
+                 remainingInterval: [b', b], rehookNodeList: processed}
+   
+   d. Otherwise, node doesn't have tag to remove, process children:
+      i. removed ← false
+      
+      ii. Find children that might overlap:
+         startIdx ← FindInsertionPoint(ν.children, a')
+         If startIdx > 0 and ν.children[startIdx-1].interval[1] > a' then:
+            startIdx ← startIdx - 1
+      
+      iii. i ← startIdx
+      iv. While i < |ν.children| do:
+         child ← ν.children[i]
+         
+         /* Skip if no overlap */
+         If b' ≤ child.interval[0] or a' ≥ child.interval[1] then:
+            i ← i + 1
+            Continue
+         
+         childResult ← RemoveTagDFS(child, α, a, b)
+         
+         If childResult.removed then:
+            removed ← true
+            
+            If childResult.state ∈ {"REMOVE-ENTIRE-NODE", "REMOVE-INTERVAL-INSIDE"} then:
+               /* Remove child and add its rehook nodes */
+               Remove element at position i from ν.children
+               
+               /* Insert rehook nodes at right positions */
+               If |childResult.rehookNodeList| > 0 then:
+                  For each rehookNode in childResult.rehookNodeList do:
+                     insertPos ← FindInsertionPoint(ν.children, rehookNode.interval[0])
+                     Insert rehookNode at position insertPos in ν.children
+                  
+                  /* Reset position */
+                  i ← FindInsertionPoint(ν.children, a')
+                  If i > 0 and ν.children[i-1].interval[1] > a' then:
+                     i ← i - 1
+               End if
+            Else:
+               /* For other states, child was adjusted, not removed */
+               i ← i + 1
+            
+            /* Process remaining interval if any */
+            If childResult.remainingInterval[0] < childResult.remainingInterval[1] then:
+               remainingResult ← RemoveTagDFS(ν, α, 
+                                           childResult.remainingInterval[0], 
+                                           childResult.remainingInterval[1])
+               If remainingResult.removed then:
+                  removed ← true
+            End if
+         Else:
+            i ← i + 1
+      
+      v. Ensure child intervals are properly nested:
+         For each child in ν.children do:
+            child.interval[0] ← max(child.interval[0], ν.interval[0])
+            child.interval[1] ← min(child.interval[1], ν.interval[1])
+      
+      vi. Return {removed: removed, state: "PROCESSED_CHILDREN", 
+                remainingInterval: [max(b', a), b], rehookNodeList: {}}
+
+T6. [Check for tag] To check if tag α exists in interval [a, b] in tree T:
+   Return CheckTagDFS(T.root, α, a, b)
+
+   Procedure CheckTagDFS(ν, α, a, b):
+   a. If ν.tag = α and ν.interval[0] ≤ a and ν.interval[1] ≥ b then:
+      Return true
+   
+   b. Find children that might overlap:
+      i ← FindInsertionPoint(ν.children, a)
+      If i > 0 and ν.children[i-1].interval[1] > a then:
+         i ← i - 1
+   
+   c. Check relevant children:
+      While i < |ν.children| do:
+         child ← ν.children[i]
+         
+         /* Skip if no overlap */
+         If b ≤ child.interval[0] or a ≥ child.interval[1] then:
+            i ← i + 1
+            Continue
+         
+         If CheckTagDFS(child, α, a, b) then:
+            Return true
+         
+         i ← i + 1
+   
+   d. Return false
+
+T7. [Format text with tags] To get formatted text with tags from tree T and text string:
+   a. M ← {} /* Markers */
+   
+   b. Procedure CollectMarkers(ν, M, parentTags = {}):
+      i. If ν.tag ≠ null then:
+         /* Add opening marker */
+         Append {position: ν.interval[0], tag: ν.tag, isOpening: true} to M
+         
+         /* Add closing marker */
+         Append {position: ν.interval[1], tag: ν.tag, isOpening: false} to M
+      
+      ii. Process children:
+         For each child in ν.children do:
+            newParentTags ← parentTags
+            If ν.tag ≠ null then:
+               Append ν.tag to newParentTags
+            
+            CollectMarkers(child, M, newParentTags)
+   
+   c. CollectMarkers(T.root, M)
+   
+   d. Sort M by position (with closing tags before opening at same position)
+   
+   e. Build result with tags inserted:
+      result ← ""
+      pos ← 0
+      
+      For each marker in M do:
+         result ← result + substring(text, pos, marker.position)
+         pos ← marker.position
+         
+         If marker.isOpening then:
+            result ← result + "<" + marker.tag + ">"
+         Else:
+            result ← result + "</" + marker.tag + ">"
+      
+      result ← result + substring(text, pos, |text|)
+      Return result
